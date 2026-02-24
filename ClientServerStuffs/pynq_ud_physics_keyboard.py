@@ -12,6 +12,7 @@ def connect(port, hello_msg):
     while True:
         try:
             s = socket.create_connection((SERVER_IP, port), timeout=10)
+            s.settimeout(None)
             f = s.makefile("r")
             send(s, hello_msg)
             ack = f.readline().strip()
@@ -98,6 +99,17 @@ def main():
         tick = int(msg["tick"])
         dt = float(msg.get("dt", 1/30))
         objects = msg["objects"]
+
+        controls = msg.get("controls", {"lr": 0, "ud": 0})
+        lr = int(controls.get("lr", 0))
+        ud = int(controls.get("ud", 0))
+
+        speed = 4.0
+        for o in objects:
+            if int(o["id"]) == 0:
+                o["vel"][0] = speed * lr
+                o["vel"][1] = speed * ud
+                break
 
         new_objects, collisions = physics_step(objects, dt)
 

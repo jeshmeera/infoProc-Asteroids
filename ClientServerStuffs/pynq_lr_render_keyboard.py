@@ -1,5 +1,6 @@
 import socket, json, time
 import pygame
+import random 
 
 SERVER_IP = "56.228.33.153"
 RENDER_PORT = 9003
@@ -50,6 +51,10 @@ def main():
     pygame.display.set_caption("PYNQ LR render + LR control (focus here)")
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 24)
+    start_time = time.time()
+    hud_font = pygame.font.SysFont("consolas", 22)
+    big_font = pygame.font.SysFont("consolas", 36, bold=True)
+    stars = [(random.randrange(W), random.randrange(H), random.choice([1, 2])) for _ in range(120)]
 
     last_send = 0.0
     lr_value = 0
@@ -102,28 +107,49 @@ def main():
         objs = msg.get("objects", [])
         controls = msg.get("controls", {"lr": 0, "ud": 0})
 
-        # --- draw ---
-        screen.fill((0, 0, 0))
+        screen.fill((0, 0, 10))  # slightly blue-black
+
+        # subtle starfield
+        for sx, sy, r in stars:
+            pygame.draw.circle(screen, (180, 180, 200), (sx, sy), r)
+
+        # move stars slowly for "motion"
+        for i, (sx, sy, r) in enumerate(stars):
+            sy = (sy + r) % H
+            stars[i] = (sx, sy, r)
+
+        # --- HUD background panel (top-left) ---
+        hud = pygame.Surface((260, 110), pygame.SRCALPHA)
+        hud.fill((0, 0, 0, 160))  # RGBA, last is alpha
+
+        score = int(time.time() - start_time)
+        lines = [
+            f"SCORE  {score:04d}",
+        ]
+
+        y = 8
+        for i, t in enumerate(lines):
+            surf = (big_font if i == 0 else hud_font).render(t, True, (230, 230, 230))
+            hud.blit(surf, (10, y))
+            y += 34 if i == 0 else 22
+
+        screen.blit(hud, (10, 10))
 
         for o in objs:
             x, y = o["pos"][0], o["pos"][1]
             sx, sy = world_to_screen(x, y)
             r = max(2, int(8 * float(o.get("size", 1.0))))
             if o["type"] == "player":
-                pygame.draw.circle(screen, (0, 255, 0), (sx, sy), r, 2)
+                pygame.draw.circle(screen, (0, 255, 0), (sx, sy), r, 3)
             else:
-                pygame.draw.circle(screen, (255, 255, 255), (sx, sy), r, 1)
+                pygame.draw.circle(screen, (200, 200, 200), (sx, sy), r, 0)
+                pygame.draw.circle(screen, (255, 255, 255), (sx - r//3, sy - r//3), max(1, r//3), 0)
+                pygame.draw.circle(screen, (120, 120, 120), (sx, sy), r, 2)
 
-        # On-screen debug: tick + controls
-        txt1 = font.render(f"tick={tick}", True, (200, 200, 200))
-        txt2 = font.render(f"controls lr={controls.get('lr',0)} ud={controls.get('ud',0)}", True, (200, 200, 200))
-        txt3 = font.render(f"local LR key={lr_value}", True, (200, 200, 200))
-        screen.blit(txt1, (10, 10))
-        screen.blit(txt2, (10, 30))
-        screen.blit(txt3, (10, 50))
 
         pygame.display.flip()
         clock.tick(60)
 
 if __name__ == "__main__":
     main()
+    

@@ -22,7 +22,7 @@ Run the server: python3 server.py
 3. Upload:
 - the files in the video_and_physics_hardware folder (bitstream + overlays)
 - video_and_physics_code.py
-4 Make sure to import the custom IP repository (video_physics_ip_repo.zip) in Vivado by adding the path to video_physics_ip_repo in settings->IP->repository.
+4. Make sure to import the custom IP repository (video_physics_ip_repo.zip) in Vivado by adding the path to video_physics_ip_repo in settings->IP->repository.
 
 5. Open a Jupyter terminal on the PYNQ and run:
 python3 video_and_physics_code.py

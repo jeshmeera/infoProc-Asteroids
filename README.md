@@ -30,10 +30,9 @@ python3 video_and_physics_code.py
 1. Ensure WiFi is enabled on the board.
 2. Upload:
 - render_and_audio_hardware files
-- render_and_audio_code.py
+- render_and_audio_code.ipynb
 
-3. Open a Jupyter terminal on the PYNQ and run:
-python3 render_and_audio_code.py
+3. Run the uploaded jupyter notebook (the hardware files should be stored in the same folder).
 
 ### Notes
 - Ensure that you run the Jupyter terminal commands in the relevant directory (home/xilinx/jupyter_notebooks).

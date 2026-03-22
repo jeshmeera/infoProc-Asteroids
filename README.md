@@ -5,7 +5,7 @@ Distributed FPGA Asteroids System Demo
 
 https://github.com/user-attachments/assets/aeb886e7-354f-464c-96a0-d8a1817ff284
 
-##How to Run
+## How to Run
 
 ### 1. Launch Cloud Server (AWS EC2)
 1. Start an EC2 instance (Ubuntu recommended).

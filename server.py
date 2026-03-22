@@ -4,7 +4,6 @@ import json
 import math
 import os
 import random
-import struct
 import time
 from dataclasses import dataclass, field, asdict
 from decimal import Decimal
@@ -15,20 +14,13 @@ try:
 except Exception:
     boto3 = None
 
-# ----------------------
 # Network / ports
-# ----------------------
 HOST = os.getenv("HOST", "0.0.0.0")
 CONTROL_PORT = int(os.getenv("CONTROL_PORT", "9001"))
 PHYSICS_PORT = int(os.getenv("PHYSICS_PORT", "9002"))
-RENDER_PORT = int(os.getenv("RENDER_PORT", "9003"))
-AUDIO_PORT = int(os.getenv("AUDIO_PORT", "9006"))
 RENDER_CTRL_PORT = int(os.getenv("RENDER_CTRL_PORT", "9004"))
-LEGACY_PHYSICS_PORT = int(os.getenv("LEGACY_PHYSICS_PORT", "5005"))
 
-# ----------------------
 # Game tuning
-# ----------------------
 TICK_HZ = float(os.getenv("TICK_HZ", "30.0"))
 DT = 1.0 / TICK_HZ
 MAX_ASTEROIDS = int(os.getenv("MAX_ASTEROIDS", "63"))
@@ -42,29 +34,19 @@ Z_NEAR_SPAWN = 12.0
 Z_FAR_SPAWN = 25.0
 VX_RANGE = 1.5
 VY_RANGE = 1.2
-VZ_MIN = 2.0
-VZ_MAX = 6.0
+VZ_MIN = 4.0
+VZ_MAX = 9.0
 SIZE_MIN = 0.05
 SIZE_MAX = 0.4
-PLAYER_SPEED = 4.0
+PLAYER_SPEED = 8.0
+PLAYER_LR_SPEED = 9
 PLAYER_SIZE = 0.2
 PLAYER_X_MIN = -1.5
 PLAYER_X_MAX = 1.5
 PLAYER_Y_MIN = -0.6
 PLAYER_Y_MAX = Y_SPAWN_RANGE
 
-# ----------------------
-# Legacy binary collision bridge
-# ----------------------
-REC_STRUCT = struct.Struct("<8i")
-RECORD_BYTES = REC_STRUCT.size
-Q_SCALE = 65536.0
-N_MAX = 256
-DEFAULT_RESTITUTION = float(os.getenv("DEFAULT_RESTITUTION", "1.0"))
-
-# ----------------------
 # Database configuration
-# ----------------------
 REGION = os.getenv("AWS_REGION", "eu-north-1")
 TABLE_SESSIONS = os.getenv("TABLE_SESSIONS", "GameSessions")
 TABLE_GAMESTATE = os.getenv("TABLE_GAMESTATE", "GameState")
@@ -78,9 +60,7 @@ def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-# ----------------------
 # DB helpers
-# ----------------------
 def to_dynamo(value: Any) -> Any:
     if isinstance(value, float):
         return Decimal(str(value))
@@ -139,9 +119,7 @@ class DB:
                 "SET latest_save_ts=:ts, latest_save_tick=:t, current_tick=:t, "
                 "score=:s, high_score=:h, #status=:st"
             ),
-            ExpressionAttributeNames={
-                "#status": "status",
-            },
+            ExpressionAttributeNames={"#status": "status"},
             ExpressionAttributeValues={
                 ":ts": save_ts,
                 ":t": int(gs.tick),
@@ -170,9 +148,7 @@ class DB:
 db = DB()
 
 
-# ----------------------
 # NDJSON helpers
-# ----------------------
 async def read_msg(reader: asyncio.StreamReader) -> Dict[str, Any]:
     line = await reader.readline()
     if not line:
@@ -185,64 +161,7 @@ async def send_msg(writer: asyncio.StreamWriter, msg: Dict[str, Any]) -> None:
     await writer.drain()
 
 
-async def recv_exact(reader: asyncio.StreamReader, n: int) -> Optional[bytes]:
-    buf = bytearray()
-    while len(buf) < n:
-        chunk = await reader.read(n - len(buf))
-        if not chunk:
-            return None
-        buf.extend(chunk)
-    return bytes(buf)
-
-
-# ----------------------
-# Legacy binary helpers
-# ----------------------
-def q2f(x: int) -> float:
-    return float(x) / Q_SCALE
-
-
-def f2q(x: float) -> int:
-    return int(round(float(x) * Q_SCALE))
-
-
-def payload_to_objects(payload: bytes, n: int) -> List[Dict[str, Any]]:
-    objs: List[Dict[str, Any]] = []
-    for i in range(n):
-        off = i * RECORD_BYTES
-        px, py, pz, vx, vy, vz, radius_q, _mass_q = REC_STRUCT.unpack(payload[off:off + RECORD_BYTES])
-        objs.append({
-            "id": i + 1,
-            "type": "asteroid",
-            "pos": [q2f(px), q2f(py), q2f(pz)],
-            "vel": [q2f(vx), q2f(vy), q2f(vz)],
-            "size": q2f(radius_q),
-        })
-    return objs
-
-
-def objects_to_payload(objects: List[Dict[str, Any]], n: int) -> bytes:
-    by_id = {int(o.get("id", idx + 1)): o for idx, o in enumerate(objects)}
-    out = bytearray(n * RECORD_BYTES)
-    for i in range(n):
-        oid = i + 1
-        o = by_id.get(oid, {})
-        pos = o.get("pos", [0.0, 0.0, 0.0])
-        vel = o.get("vel", [0.0, 0.0, 0.0])
-        size = float(o.get("size", 1.0))
-        REC_STRUCT.pack_into(
-            out,
-            i * RECORD_BYTES,
-            f2q(pos[0]), f2q(pos[1]), f2q(pos[2]),
-            f2q(vel[0]), f2q(vel[1]), f2q(vel[2]),
-            f2q(size), f2q(size ** 3),
-        )
-    return bytes(out)
-
-
-# ----------------------
 # Game data model
-# ----------------------
 @dataclass
 class Obj:
     id: int
@@ -283,23 +202,6 @@ class GameState:
             "last_collision": self.last_collision,
             "last_score_delta": self.last_score_delta,
             "physics_node_id": self.physics_node_id,
-        }
-
-    def audio_snapshot(self) -> Dict[str, Any]:
-        player = self.objects.get(0)
-        return {
-            "tick": self.tick,
-            "dt": DT,
-            "controls": {"lr": self.control_lr, "ud": self.control_ud},
-            "score": self.score,
-            "high_score": self.high_score,
-            "game_over": self.game_over,
-            "player_pos": list(player.pos) if player else [0.0, 0.0, 0.0],
-            "player_vel": list(player.vel) if player else [0.0, 0.0, 0.0],
-            "last_collision": self.last_collision,
-            "last_score_delta": self.last_score_delta,
-            "session_id": self.session_id,
-            "user_id": self.user_id,
         }
 
 
@@ -353,20 +255,13 @@ def init_game() -> GameState:
     return gs
 
 
-# ----------------------
 # Shared server state
-# ----------------------
 physics_conn: Dict[str, Optional[asyncio.StreamWriter]] = {"writer": None}
-render_sinks: Set[asyncio.StreamWriter] = set()
-audio_sinks: Set[asyncio.StreamWriter] = set()
 control_sinks: Set[asyncio.StreamWriter] = set()
 
 latest_controls: Dict[str, Any] = {"lr": 0, "ud": 0, "seq": 0, "ud_seq": 0, "t": 0.0}
 latest_physics_result: Optional[Dict[str, Any]] = None
 control_lock = asyncio.Lock()
-next_legacy_tick = 1
-pending_legacy_physics: Dict[int, asyncio.Future] = {}
-pending_legacy_lock = asyncio.Lock()
 
 
 async def safe_broadcast(sinks: Set[asyncio.StreamWriter], msg: Dict[str, Any], tag: str) -> None:
@@ -399,9 +294,7 @@ async def broadcast_controls() -> None:
     await safe_broadcast(control_sinks, msg, "RCTRL")
 
 
-# ----------------------
 # Handlers
-# ----------------------
 async def control_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     peer = writer.get_extra_info("peername")
     try:
@@ -409,10 +302,12 @@ async def control_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWr
         if hello.get("type") != "hello":
             await send_msg(writer, {"type": "error", "error": "expected hello"})
             return
+
         role = hello.get("role", "control")
         if role not in {"control", "control_lr", "control_ud", "gesture", "input"}:
             await send_msg(writer, {"type": "error", "error": f"unexpected control role={role}"})
             return
+
         await send_msg(writer, {"type": "hello_ack", "role": role})
         log(f"CTRL + {role} from {peer}")
 
@@ -420,16 +315,19 @@ async def control_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWr
             msg = await read_msg(reader)
             if msg.get("type") != "control":
                 continue
+
             axis = str(msg.get("axis", "lr"))
             value = max(-1, min(1, int(msg.get("value", 0))))
             if axis not in {"lr", "ud"}:
                 continue
+
             async with control_lock:
                 latest_controls[axis] = value
                 latest_controls["seq"] = int(latest_controls["seq"]) + 1
                 if axis == "ud":
                     latest_controls["ud_seq"] = int(latest_controls["ud_seq"]) + 1
                 latest_controls["t"] = float(msg.get("t", time.time()))
+
             await broadcast_controls()
     except Exception as e:
         log(f"CTRL - {peer} ({e})")
@@ -448,84 +346,22 @@ async def physics_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWr
         if hello.get("type") != "hello" or hello.get("role") != "physics":
             await send_msg(writer, {"type": "error", "error": "expected hello role=physics"})
             return
+
         physics_conn["writer"] = writer
         await send_msg(writer, {"type": "hello_ack", "role": "physics"})
         log(f"PHYS + physics node from {peer}")
+
         while True:
             msg = await read_msg(reader)
             if msg.get("type") != "physics_result":
                 continue
             global latest_physics_result
             latest_physics_result = msg
-            tick = int(msg.get("tick", -1))
-            async with pending_legacy_lock:
-                fut = pending_legacy_physics.pop(tick, None)
-            if fut is not None and not fut.done():
-                fut.set_result(msg)
     except Exception as e:
         log(f"PHYS - {peer} ({e})")
     finally:
         if physics_conn.get("writer") is writer:
             physics_conn["writer"] = None
-        async with pending_legacy_lock:
-            for tick, fut in list(pending_legacy_physics.items()):
-                if not fut.done():
-                    fut.set_exception(ConnectionError("physics node disconnected"))
-                pending_legacy_physics.pop(tick, None)
-        try:
-            writer.close()
-            await writer.wait_closed()
-        except Exception:
-            pass
-
-
-async def render_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    peer = writer.get_extra_info("peername")
-    try:
-        hello = await read_msg(reader)
-        if hello.get("type") != "hello":
-            await send_msg(writer, {"type": "error", "error": "expected hello"})
-            return
-        role = hello.get("role", "render")
-        if role not in {"render", "renderer"}:
-            await send_msg(writer, {"type": "error", "error": "expected hello role=render"})
-            return
-        render_sinks.add(writer)
-        await send_msg(writer, {"type": "hello_ack", "role": "render"})
-        log(f"RENDER + sink from {peer}")
-        while True:
-            _ = await read_msg(reader)
-    except Exception as e:
-        log(f"RENDER - {peer} ({e})")
-    finally:
-        render_sinks.discard(writer)
-        try:
-            writer.close()
-            await writer.wait_closed()
-        except Exception:
-            pass
-
-
-async def audio_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    peer = writer.get_extra_info("peername")
-    try:
-        hello = await read_msg(reader)
-        if hello.get("type") != "hello":
-            await send_msg(writer, {"type": "error", "error": "expected hello"})
-            return
-        role = hello.get("role", "audio")
-        if role not in {"audio", "sound", "audio_render"}:
-            await send_msg(writer, {"type": "error", "error": "expected hello role=audio"})
-            return
-        audio_sinks.add(writer)
-        await send_msg(writer, {"type": "hello_ack", "role": "audio"})
-        log(f"AUDIO + sink from {peer}")
-        while True:
-            _ = await read_msg(reader)
-    except Exception as e:
-        log(f"AUDIO - {peer} ({e})")
-    finally:
-        audio_sinks.discard(writer)
         try:
             writer.close()
             await writer.wait_closed()
@@ -540,10 +376,12 @@ async def renderer_control_handler(reader: asyncio.StreamReader, writer: asyncio
         if hello.get("type") != "hello" or hello.get("role") != "render_control":
             await send_msg(writer, {"type": "error", "error": "expected hello role=render_control"})
             return
+
         control_sinks.add(writer)
         await send_msg(writer, {"type": "hello_ack", "role": "render_control"})
         log(f"RCTRL + sink from {peer}")
         await broadcast_controls()
+
         while True:
             _ = await read_msg(reader)
     except Exception as e:
@@ -557,68 +395,12 @@ async def renderer_control_handler(reader: asyncio.StreamReader, writer: asyncio
             pass
 
 
-async def legacy_binary_physics_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    global next_legacy_tick
-    peer = writer.get_extra_info("peername")
-    log(f"LEGACY + binary client from {peer}")
-    try:
-        while True:
-            hdr = await recv_exact(reader, 12)
-            if not hdr:
-                break
-            n, dt_q, rest_q = struct.unpack("<III", hdr)
-            if n == 0 or n > N_MAX:
-                log(f"LEGACY bad n={n} from {peer}")
-                break
-            payload = await recv_exact(reader, n * RECORD_BYTES)
-            if payload is None:
-                break
-            pw = physics_conn.get("writer")
-            if pw is None:
-                log("LEGACY no physics node connected")
-                break
-
-            tick = next_legacy_tick
-            next_legacy_tick += 1
-            fut = asyncio.get_running_loop().create_future()
-            async with pending_legacy_lock:
-                pending_legacy_physics[tick] = fut
-
-            req = {
-                "type": "physics",
-                "tick": tick,
-                "dt": q2f(dt_q),
-                "restitution": q2f(rest_q),
-                "objects": payload_to_objects(payload, n),
-            }
-            try:
-                await send_msg(pw, req)
-                res = await asyncio.wait_for(fut, timeout=PHYSICS_TIMEOUT_S)
-                out_payload = objects_to_payload(list(res.get("objects", [])), n)
-                writer.write(out_payload)
-                await writer.drain()
-            except Exception as e:
-                log(f"LEGACY request failed tick={tick}: {e}")
-                async with pending_legacy_lock:
-                    pending_legacy_physics.pop(tick, None)
-                break
-    except Exception as e:
-        log(f"LEGACY - {peer} ({e})")
-    finally:
-        try:
-            writer.close()
-            await writer.wait_closed()
-        except Exception:
-            pass
-
-
-# ----------------------
 # Game helpers
-# ----------------------
 def maybe_respawn_asteroids(gs: GameState) -> int:
     player = gs.objects.get(0)
     if player is None:
         return 0
+
     player_z = player.pos[2]
     respawned = 0
     for obj_id, obj in list(gs.objects.items()):
@@ -628,6 +410,7 @@ def maybe_respawn_asteroids(gs: GameState) -> int:
             gs.objects[obj_id] = spawn_asteroid(obj_id, player_z=player_z)
             gs.score += 10
             respawned += 1
+
     return respawned
 
 
@@ -635,7 +418,7 @@ def apply_controls(gs: GameState) -> None:
     p = gs.objects.get(0)
     if p is None:
         return
-    p.vel[0] = PLAYER_SPEED * gs.control_lr
+    p.vel[0] = PLAYER_LR_SPEED * gs.control_lr
     p.vel[1] = PLAYER_SPEED * gs.control_ud
     p.vel[2] = 0.0
 
@@ -644,6 +427,7 @@ def detect_collision(gs: GameState) -> Optional[Dict[str, Any]]:
     player = gs.objects.get(0)
     if player is None:
         return None
+
     for obj in gs.objects.values():
         if obj.type != "asteroid":
             continue
@@ -659,6 +443,7 @@ def detect_collision(gs: GameState) -> Optional[Dict[str, Any]]:
                 "distance": dist,
                 "t": time.time(),
             }
+
     return None
 
 
@@ -677,9 +462,7 @@ def parse_objects(objects: List[Dict[str, Any]]) -> Dict[int, Obj]:
     return out
 
 
-# ----------------------
 # Loops
-# ----------------------
 async def keepalive_loop() -> None:
     while True:
         await asyncio.sleep(1.0 / CONTROL_KEEPALIVE_HZ)
@@ -732,8 +515,14 @@ async def game_loop() -> None:
                         gs.objects = parse_objects(list(res.get("objects", [])))
                         player = gs.objects.get(0)
                         if player is not None:
-                            player.pos[0] = max(PLAYER_X_MIN + player.size, min(PLAYER_X_MAX - player.size, player.pos[0]))
-                            player.pos[1] = max(PLAYER_Y_MIN + player.size, min(PLAYER_Y_MAX - player.size, player.pos[1]))
+                            player.pos[0] = max(
+                                PLAYER_X_MIN + player.size,
+                                min(PLAYER_X_MAX - player.size, player.pos[0]),
+                            )
+                            player.pos[1] = max(
+                                PLAYER_Y_MIN + player.size,
+                                min(PLAYER_Y_MAX - player.size, player.pos[1]),
+                            )
                         gs.physics_node_id = res.get("node_id")
                         gs.tick += 1
                         if not gs.game_over:
@@ -758,8 +547,6 @@ async def game_loop() -> None:
         if collision is not None:
             gs.game_over = True
             gs.last_collision = collision
-        # else:
-        #     gs.game_over = False
 
         if gs.game_over and not game_over_saved:
             save_score(gs.user_id, gs.score)
@@ -790,42 +577,26 @@ async def game_loop() -> None:
             restart_requested = False
             latest_physics_result = None
 
-        render_msg = {"type": "render", **gs.snapshot()}
-        audio_msg = {"type": "audio", **gs.audio_snapshot()}
-        await safe_broadcast(render_sinks, render_msg, "RENDER")
-        await safe_broadcast(audio_sinks, audio_msg, "AUDIO")
-
         elapsed = time.perf_counter() - t0
         if elapsed < DT:
             await asyncio.sleep(DT - elapsed)
 
 
-# ----------------------
 # Main
-# ----------------------
 async def main() -> None:
     s1 = await asyncio.start_server(control_handler, HOST, CONTROL_PORT)
     s2 = await asyncio.start_server(physics_handler, HOST, PHYSICS_PORT)
-    s3 = await asyncio.start_server(render_handler, HOST, RENDER_PORT)
-    s4 = await asyncio.start_server(audio_handler, HOST, AUDIO_PORT)
-    s5 = await asyncio.start_server(renderer_control_handler, HOST, RENDER_CTRL_PORT)
-    s6 = await asyncio.start_server(legacy_binary_physics_handler, HOST, LEGACY_PHYSICS_PORT)
+    s3 = await asyncio.start_server(renderer_control_handler, HOST, RENDER_CTRL_PORT)
 
     log(f"CONTROL         listening on {HOST}:{CONTROL_PORT}")
     log(f"PHYSICS         listening on {HOST}:{PHYSICS_PORT}")
-    log(f"RENDER          listening on {HOST}:{RENDER_PORT}")
-    log(f"AUDIO           listening on {HOST}:{AUDIO_PORT}")
     log(f"RENDER CONTROL  listening on {HOST}:{RENDER_CTRL_PORT}")
-    log(f"LEGACY PHYSICS  listening on {HOST}:{LEGACY_PHYSICS_PORT}")
 
-    async with s1, s2, s3, s4, s5, s6:
+    async with s1, s2, s3:
         await asyncio.gather(
             s1.serve_forever(),
             s2.serve_forever(),
             s3.serve_forever(),
-            s4.serve_forever(),
-            s5.serve_forever(),
-            s6.serve_forever(),
             keepalive_loop(),
             game_loop(),
         )

@@ -16,28 +16,26 @@ Upload final_master_server.py to the instance.
 
 Run the server: python3 server.py
 
-2. Setup Video + Physics Node (PYNQ Z1)
-Connect a USB camera
-(we used a Logitech C310 – 720p @ 30fps).
-Ensure WiFi is enabled on the board.
-Upload:
+### 2. Setup Video + Physics Node (PYNQ Z1)
+1. Connect a USB camera (we used a Logitech C310 – 720p @ 30fps).
+2. Ensure WiFi is enabled on the board.
+3. Upload:
 video_and_physics_hardware (bitstream + overlays)
 video_and_physics_code.py
 
-Open a Jupyter terminal on the PYNQ and run:
+4. Open a Jupyter terminal on the PYNQ and run:
 python3 video_and_physics_code.py
 
-3. Setup Render + Audio Node (PYNQ Z1)
-Ensure WiFi is enabled on the board.
-Upload:
+### 3. Setup Render + Audio Node (PYNQ Z1)
+1. Ensure WiFi is enabled on the board.
+2. Upload:
 render_and_audio_hardware
 render_and_audio_code.py
 
-Open a Jupyter terminal on the PYNQ and run:
+3. Open a Jupyter terminal on the PYNQ and run:
 python3 render_and_audio_code.py
 
-Ensure that you run this command in the relevant directory (home/xilinx/jupyter_notebooks).
-
-Notes
-Ensure all devices (EC2 + both PYNQ boards) are on the same network or correctly configured with public IPs.
-Verify ports/IPs in the scripts match the EC2 server (currently set to the IP address of our instance).
+### Notes
+- Ensure that you run the Jupyter terminal commands in the relevant directory (home/xilinx/jupyter_notebooks).
+- Verify ports/IPs in the scripts match the EC2 server (currently set to the IP address of our instance).
+- We have not provided our .pem file and any details on our database infrastructure support, since this is a public repo. Proof of it running can be seen in our demo video.

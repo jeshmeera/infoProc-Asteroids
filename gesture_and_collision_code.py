@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 from pynq import Overlay, allocate, MMIO
 
-SERVER_IP = "192.168.2.1"
+SERVER_IP = "56.228.33.153"
 CONTROL_PORT = 9001
 PHYSICS_PORT = 9002
 

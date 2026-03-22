@@ -27,12 +27,12 @@ Run the server: python3 server.py
 python3 video_and_physics_code.py
 
 ### 3. Setup Render + Audio Node (PYNQ Z1)
-1. Ensure WiFi is enabled on the board.
+1. Ensure WiFi is enabled on the board with a monitor connected over HDMI and python libraries numba and noise are installed.
 2. Upload:
 - render_and_audio_hardware files
 - render_and_audio_code.ipynb
 
-3. Run the uploaded jupyter notebook (the hardware files should be stored in the same folder).
+3. Run the uploaded jupyter notebook (the hardware files should be stored in the same folder): the first cell loads the bitstream, the second cell contains the game software. Numba uses JIT compilation, so after connecting to the server it may take a minute or two before rendering begins and output is displayed on the monitor.
 
 ### Notes
 - Ensure that you run the Jupyter terminal commands in the relevant directory (home/xilinx/jupyter_notebooks).

@@ -20,8 +20,8 @@ Run the server: python3 server.py
 1. Connect a USB camera (we used a Logitech C310 – 720p @ 30fps).
 2. Ensure WiFi is enabled on the board.
 3. Upload:
-video_and_physics_hardware (bitstream + overlays)
-video_and_physics_code.py
+- the files in the video_and_physics_hardware folder (bitstream + overlays)
+- video_and_physics_code.py
 
 4. Open a Jupyter terminal on the PYNQ and run:
 python3 video_and_physics_code.py
@@ -29,8 +29,8 @@ python3 video_and_physics_code.py
 ### 3. Setup Render + Audio Node (PYNQ Z1)
 1. Ensure WiFi is enabled on the board.
 2. Upload:
-render_and_audio_hardware
-render_and_audio_code.py
+- render_and_audio_hardware files
+- render_and_audio_code.py
 
 3. Open a Jupyter terminal on the PYNQ and run:
 python3 render_and_audio_code.py

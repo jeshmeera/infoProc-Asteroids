@@ -39,3 +39,4 @@ python3 video_and_physics_code.py
 - Verify ports/IPs in the scripts match the EC2 server (currently set to the IP address of our instance).
 - We have not provided our .pem file and any details on our database infrastructure support, since this is a public repo. Proof of it running can be seen in our demo video.
 - If you would like to inspect the Vivado files, they are available through the zip files (video_and_physics_project.zip, collision_physics_project.zip, etc.) – the final bitstreams have only been taken from the merged hardware files (video_and_physics_project and render_and_audio_project).
+- For the video_and_physics_project make sure to import the custom IP repository (video_physics_ip_repo.zip) in Vivado by adding the path to video_physics_ip_repo in settings->IP->repository.

@@ -7,7 +7,7 @@
  - [./rendering_and_audio/rendering_verilog/rast_frag_tile.v]: Tile rasterisation and shading 
  - [./rendering_and_audio/rendering_verilog/triangle_ram.v], single_ram.v, dp_single_ram.v: RAM modules
 
-[./rendering_and_audio/rendering_verilog/axi_framebuffer.v]: AXI tiple framebuffer IP
+[./rendering_and_audio/rendering_verilog/axi_framebuffer.v]: AXI triple framebuffer IP
 ## Misc
 
 [./rendering_and_audio/axi_lite_ctrl_mod]: AXI-Lite Control Signal Module

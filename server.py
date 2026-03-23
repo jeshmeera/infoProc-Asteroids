@@ -14,18 +14,17 @@ try:
 except Exception:
     boto3 = None
 
-# Network / ports
+#Network/ports
 HOST = os.getenv("HOST", "0.0.0.0")
 CONTROL_PORT = int(os.getenv("CONTROL_PORT", "9001"))
 PHYSICS_PORT = int(os.getenv("PHYSICS_PORT", "9002"))
-RENDER_CTRL_PORT = int(os.getenv("RENDER_CTRL_PORT", "9004"))
+RENDER_PORT = int(os.getenv("RENDER_PORT", "9003"))
 
-# Game tuning
+#Game tuning
 TICK_HZ = float(os.getenv("TICK_HZ", "30.0"))
 DT = 1.0 / TICK_HZ
 MAX_ASTEROIDS = int(os.getenv("MAX_ASTEROIDS", "63"))
 PHYSICS_TIMEOUT_S = float(os.getenv("PHYSICS_TIMEOUT_S", "2.0"))
-CONTROL_KEEPALIVE_HZ = float(os.getenv("CONTROL_KEEPALIVE_HZ", "30.0"))
 AUTOSAVE_EVERY_TICKS = int(os.getenv("AUTOSAVE_EVERY_TICKS", "1"))
 
 X_SPAWN_RANGE = 1.0
@@ -46,7 +45,7 @@ PLAYER_X_MAX = 1.5
 PLAYER_Y_MIN = -0.6
 PLAYER_Y_MAX = Y_SPAWN_RANGE
 
-# Database configuration
+#Database configuration
 REGION = os.getenv("AWS_REGION", "eu-north-1")
 TABLE_SESSIONS = os.getenv("TABLE_SESSIONS", "GameSessions")
 TABLE_GAMESTATE = os.getenv("TABLE_GAMESTATE", "GameState")
@@ -60,7 +59,7 @@ def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-# DB helpers
+#DB helpers
 def to_dynamo(value: Any) -> Any:
     if isinstance(value, float):
         return Decimal(str(value))
@@ -148,7 +147,7 @@ class DB:
 db = DB()
 
 
-# NDJSON helpers
+#NDJSON helpers
 async def read_msg(reader: asyncio.StreamReader) -> Dict[str, Any]:
     line = await reader.readline()
     if not line:
@@ -161,7 +160,7 @@ async def send_msg(writer: asyncio.StreamWriter, msg: Dict[str, Any]) -> None:
     await writer.drain()
 
 
-# Game data model
+#Game data model
 @dataclass
 class Obj:
     id: int
@@ -255,9 +254,9 @@ def init_game() -> GameState:
     return gs
 
 
-# Shared server state
+#Shared server state
 physics_conn: Dict[str, Optional[asyncio.StreamWriter]] = {"writer": None}
-control_sinks: Set[asyncio.StreamWriter] = set()
+render_sinks: Set[asyncio.StreamWriter] = set()
 
 latest_controls: Dict[str, Any] = {"lr": 0, "ud": 0, "seq": 0, "ud_seq": 0, "t": 0.0}
 latest_physics_result: Optional[Dict[str, Any]] = None
@@ -282,19 +281,7 @@ async def safe_broadcast(sinks: Set[asyncio.StreamWriter], msg: Dict[str, Any], 
             pass
 
 
-async def broadcast_controls() -> None:
-    async with control_lock:
-        msg = {
-            "type": "controls",
-            "lr": int(latest_controls["lr"]),
-            "ud": int(latest_controls["ud"]),
-            "seq": int(latest_controls["seq"]),
-            "t": float(latest_controls["t"]),
-        }
-    await safe_broadcast(control_sinks, msg, "RCTRL")
-
-
-# Handlers
+#Handlers
 async def control_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     peer = writer.get_extra_info("peername")
     try:
@@ -302,12 +289,10 @@ async def control_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWr
         if hello.get("type") != "hello":
             await send_msg(writer, {"type": "error", "error": "expected hello"})
             return
-
         role = hello.get("role", "control")
         if role not in {"control", "control_lr", "control_ud", "gesture", "input"}:
             await send_msg(writer, {"type": "error", "error": f"unexpected control role={role}"})
             return
-
         await send_msg(writer, {"type": "hello_ack", "role": role})
         log(f"CTRL + {role} from {peer}")
 
@@ -315,20 +300,16 @@ async def control_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWr
             msg = await read_msg(reader)
             if msg.get("type") != "control":
                 continue
-
             axis = str(msg.get("axis", "lr"))
             value = max(-1, min(1, int(msg.get("value", 0))))
             if axis not in {"lr", "ud"}:
                 continue
-
             async with control_lock:
                 latest_controls[axis] = value
                 latest_controls["seq"] = int(latest_controls["seq"]) + 1
                 if axis == "ud":
                     latest_controls["ud_seq"] = int(latest_controls["ud_seq"]) + 1
                 latest_controls["t"] = float(msg.get("t", time.time()))
-
-            await broadcast_controls()
     except Exception as e:
         log(f"CTRL - {peer} ({e})")
     finally:
@@ -346,11 +327,9 @@ async def physics_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWr
         if hello.get("type") != "hello" or hello.get("role") != "physics":
             await send_msg(writer, {"type": "error", "error": "expected hello role=physics"})
             return
-
         physics_conn["writer"] = writer
         await send_msg(writer, {"type": "hello_ack", "role": "physics"})
         log(f"PHYS + physics node from {peer}")
-
         while True:
             msg = await read_msg(reader)
             if msg.get("type") != "physics_result":
@@ -369,25 +348,26 @@ async def physics_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWr
             pass
 
 
-async def renderer_control_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+async def render_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     peer = writer.get_extra_info("peername")
     try:
         hello = await read_msg(reader)
-        if hello.get("type") != "hello" or hello.get("role") != "render_control":
-            await send_msg(writer, {"type": "error", "error": "expected hello role=render_control"})
+        if hello.get("type") != "hello":
+            await send_msg(writer, {"type": "error", "error": "expected hello"})
             return
-
-        control_sinks.add(writer)
-        await send_msg(writer, {"type": "hello_ack", "role": "render_control"})
-        log(f"RCTRL + sink from {peer}")
-        await broadcast_controls()
-
+        role = hello.get("role", "render")
+        if role not in {"render", "renderer"}:
+            await send_msg(writer, {"type": "error", "error": "expected hello role=render"})
+            return
+        render_sinks.add(writer)
+        await send_msg(writer, {"type": "hello_ack", "role": "render"})
+        log(f"RENDER + sink from {peer}")
         while True:
             _ = await read_msg(reader)
     except Exception as e:
-        log(f"RCTRL - {peer} ({e})")
+        log(f"RENDER - {peer} ({e})")
     finally:
-        control_sinks.discard(writer)
+        render_sinks.discard(writer)
         try:
             writer.close()
             await writer.wait_closed()
@@ -395,12 +375,11 @@ async def renderer_control_handler(reader: asyncio.StreamReader, writer: asyncio
             pass
 
 
-# Game helpers
+#Game helpers
 def maybe_respawn_asteroids(gs: GameState) -> int:
     player = gs.objects.get(0)
     if player is None:
         return 0
-
     player_z = player.pos[2]
     respawned = 0
     for obj_id, obj in list(gs.objects.items()):
@@ -410,7 +389,6 @@ def maybe_respawn_asteroids(gs: GameState) -> int:
             gs.objects[obj_id] = spawn_asteroid(obj_id, player_z=player_z)
             gs.score += 10
             respawned += 1
-
     return respawned
 
 
@@ -427,7 +405,6 @@ def detect_collision(gs: GameState) -> Optional[Dict[str, Any]]:
     player = gs.objects.get(0)
     if player is None:
         return None
-
     for obj in gs.objects.values():
         if obj.type != "asteroid":
             continue
@@ -443,7 +420,6 @@ def detect_collision(gs: GameState) -> Optional[Dict[str, Any]]:
                 "distance": dist,
                 "t": time.time(),
             }
-
     return None
 
 
@@ -462,13 +438,7 @@ def parse_objects(objects: List[Dict[str, Any]]) -> Dict[int, Obj]:
     return out
 
 
-# Loops
-async def keepalive_loop() -> None:
-    while True:
-        await asyncio.sleep(1.0 / CONTROL_KEEPALIVE_HZ)
-        await broadcast_controls()
-
-
+#Loops
 async def game_loop() -> None:
     gs = init_game()
     db.create_session(gs.user_id, gs.session_id, gs.high_score)
@@ -577,27 +547,29 @@ async def game_loop() -> None:
             restart_requested = False
             latest_physics_result = None
 
+        render_msg = {"type": "render", **gs.snapshot()}
+        await safe_broadcast(render_sinks, render_msg, "RENDER")
+
         elapsed = time.perf_counter() - t0
         if elapsed < DT:
             await asyncio.sleep(DT - elapsed)
 
 
-# Main
+#Main
 async def main() -> None:
     s1 = await asyncio.start_server(control_handler, HOST, CONTROL_PORT)
     s2 = await asyncio.start_server(physics_handler, HOST, PHYSICS_PORT)
-    s3 = await asyncio.start_server(renderer_control_handler, HOST, RENDER_CTRL_PORT)
+    s3 = await asyncio.start_server(render_handler, HOST, RENDER_PORT)
 
-    log(f"CONTROL         listening on {HOST}:{CONTROL_PORT}")
-    log(f"PHYSICS         listening on {HOST}:{PHYSICS_PORT}")
-    log(f"RENDER CONTROL  listening on {HOST}:{RENDER_CTRL_PORT}")
+    log(f"CONTROL  listening on {HOST}:{CONTROL_PORT}")
+    log(f"PHYSICS  listening on {HOST}:{PHYSICS_PORT}")
+    log(f"RENDER   listening on {HOST}:{RENDER_PORT}")
 
     async with s1, s2, s3:
         await asyncio.gather(
             s1.serve_forever(),
             s2.serve_forever(),
             s3.serve_forever(),
-            keepalive_loop(),
             game_loop(),
         )
 

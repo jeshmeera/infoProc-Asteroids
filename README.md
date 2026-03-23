@@ -43,3 +43,5 @@ python3 video_and_physics_code.py
 - We have not provided our .pem file and any details on our database infrastructure support, since this is a public repo. Proof of it running can be seen in our demo video.
 - Verilog files are contained within their respective Vivado project zip (video_and_physics_project.zip, render_and_audio_project.zip, collision_physics_project.zip, etc.) – the final bitstreams have only been taken from the merged hardware files (video_and_physics_project and render_and_audio_project).
 - For reference, some verilog files can be found under verilog_reference/
+- For the camera to sufficiently detect the direction of motion, ensure you place the camera at a distance and move a large object (such as your body) through its view.
+- A stable low-latency network is required between the PYNQ boards and the AWS server. Since control, physics, and render state are exchanged in real time, high RTT or unreliable WiFi will noticeably increase input lag and reduce gameplay responsiveness.

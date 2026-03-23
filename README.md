@@ -3,7 +3,7 @@
 ## Demo Video
 Distributed FPGA Asteroids System Demo
 - Server on EC2 instance
-- Audio Input (up/down) + Rendering on PYNQ Board A
+- Audio Input (up/down) + Rendering on PYNQ Board A (Monitor connected via HDMI)
 - Video Motion Input (left/right) + Physics on PYNQ Board B
 
 https://github.com/user-attachments/assets/aeb886e7-354f-464c-96a0-d8a1817ff284

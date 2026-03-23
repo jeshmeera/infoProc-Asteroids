@@ -39,3 +39,4 @@ python3 video_and_physics_code.py
 - Verify ports/IPs in the scripts match the EC2 server (currently set to the IP address of our instance).
 - We have not provided our .pem file and any details on our database infrastructure support, since this is a public repo. Proof of it running can be seen in our demo video.
 - Verilog files are contained within their respective Vivado project zip (video_and_physics_project.zip, render_and_audio_project.zip, collision_physics_project.zip, etc.) – the final bitstreams have only been taken from the merged hardware files (video_and_physics_project and render_and_audio_project).
+- For reference, some verilog files can be found under verilog_reference/
